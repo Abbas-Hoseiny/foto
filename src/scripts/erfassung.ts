@@ -1,13 +1,15 @@
-import type { PhotoEntryPayload } from "../lib/pdf";
+import type { CaptureMode, PhotoEntryPayload } from "../lib/pdf";
 import { generatePhotoPdf } from "../lib/pdf";
 import { iconSvg } from "../lib/icons";
 
+// Der Modus wird pro Eintrag gespeichert, damit Foto- und Dokumentseiten gemischt werden können.
 type Entry = {
   id: string;
   sourceFile: File;
   file: File;
   description: string;
   url: string;
+  mode: CaptureMode;
 };
 
 const entries: Entry[] = [];
@@ -18,7 +20,7 @@ type QualityConfig = Readonly<{
   quality: number;
 }>;
 
-type PresetKey = "default" | "share";
+type PresetKey = "default" | "share" | "document";
 
 const QUALITY_PRESETS: Record<PresetKey, QualityConfig> = {
   default: {
@@ -31,20 +33,39 @@ const QUALITY_PRESETS: Record<PresetKey, QualityConfig> = {
     mimeType: "image/jpeg",
     quality: 0.72,
   },
+  document: {
+    maxEdge: 2480,
+    mimeType: "image/png",
+    quality: 0.92,
+  },
 };
 
 const DEFAULT_PRESET: PresetKey = "default";
 const SHARE_FALLBACK_PRESET: PresetKey = "share";
 const SHARE_SIZE_LIMIT = 18 * 1024 * 1024;
+const DEFAULT_CAPTURE_MODE: CaptureMode = "photo";
+const MODE_LABELS: Record<CaptureMode, string> = {
+  photo: "Foto",
+  document: "Dokument",
+};
+const MODE_PRESETS: Record<CaptureMode, PresetKey> = {
+  photo: "default",
+  document: "document",
+};
 let pendingFocusEntryId: string | null = null;
 let lastPdfBlob: Blob | null = null;
 let lastPdfFilename: string | null = null;
 let lastPdfFile: File | null = null;
+let activeCaptureMode: CaptureMode = DEFAULT_CAPTURE_MODE;
 type ExportSnapshot = {
-  sources: Array<{ file: File; description: string }>;
+  sources: Array<{ file: File; description: string; mode: CaptureMode }>;
   preset: PresetKey;
 };
 let lastExportSnapshot: ExportSnapshot | null = null;
+
+function getPresetForMode(mode: CaptureMode): PresetKey {
+  return MODE_PRESETS[mode] ?? DEFAULT_PRESET;
+}
 
 function ready() {
   const fileInput = document.querySelector<HTMLInputElement>("#photoInput");
@@ -57,6 +78,10 @@ function ready() {
   const quickCaptureButton = document.querySelector<HTMLButtonElement>(
     "#quickCaptureButton"
   );
+  const modeRadios = document.querySelectorAll<HTMLInputElement>(
+    'input[name="captureMode"]'
+  );
+  const modeStatus = document.querySelector<HTMLElement>("#captureModeStatus");
 
   if (
     !fileInput ||
@@ -68,6 +93,36 @@ function ready() {
   ) {
     return;
   }
+
+  const updateModeStatus = () => {
+    if (!modeStatus) return;
+    const label = MODE_LABELS[activeCaptureMode] ?? "Foto";
+    const suffix =
+      activeCaptureMode === DEFAULT_CAPTURE_MODE ? " (Standard)" : "";
+    modeStatus.textContent = `Aktuell: ${label}${suffix}`;
+  };
+
+  updateModeStatus();
+
+  modeRadios.forEach((radio) => {
+    radio.checked = radio.value === activeCaptureMode;
+    radio.addEventListener("change", () => {
+      if (!radio.checked) return;
+      const nextMode: CaptureMode =
+        radio.value === "document" ? "document" : "photo";
+      if (nextMode === activeCaptureMode) {
+        return;
+      }
+      activeCaptureMode = nextMode;
+      resetGeneratedPdf(shareButton, downloadButton);
+      updateExportButtons(shareButton, downloadButton);
+      setStatus(
+        status,
+        `Modus gewechselt: ${MODE_LABELS[nextMode]}. Neue Aufnahmen übernehmen diese Einstellung.`
+      );
+      updateModeStatus();
+    });
+  });
 
   const triggerCameraCapture = (forceCamera = false) => {
     if (forceCamera) {
@@ -142,9 +197,10 @@ function ready() {
     pdfButton.dataset.loading = "true";
     try {
       const payload: PhotoEntryPayload[] = entries.map(
-        ({ file, description }) => ({
+        ({ file, description, mode }) => ({
           file,
           description,
+          mode,
         })
       );
       const bytes = await generatePhotoPdf(payload);
@@ -160,9 +216,10 @@ function ready() {
       lastPdfFilename = filename;
       lastPdfFile = file;
       lastExportSnapshot = {
-        sources: entries.map(({ sourceFile, description }) => ({
+        sources: entries.map(({ sourceFile, description, mode }) => ({
           file: sourceFile,
           description,
+          mode,
         })),
         preset: DEFAULT_PRESET,
       };
@@ -242,7 +299,11 @@ async function addFiles(
   let lastEntryId: string | null = null;
   for (const file of files) {
     try {
-      const normalized = await convertFileToPreset(file, DEFAULT_PRESET);
+      const entryMode = activeCaptureMode;
+      const normalized = await convertFileToPreset(
+        file,
+        getPresetForMode(entryMode)
+      );
       const url = URL.createObjectURL(normalized);
       const entryId = crypto.randomUUID?.() ?? `${Date.now()}-${Math.random()}`;
       entries.push({
@@ -251,6 +312,7 @@ async function addFiles(
         file: normalized,
         url,
         description: "",
+        mode: entryMode,
       });
       lastEntryId = entryId;
     } catch (error) {
@@ -283,13 +345,22 @@ function render(list: HTMLElement, pdfButton: HTMLButtonElement) {
   entries.forEach((entry, index) => {
     const article = document.createElement("article");
     article.className = "photo-card content-card content-card--light";
+    const modeLabel = MODE_LABELS[entry.mode] ?? MODE_LABELS.photo;
+    const modeBadgeClass =
+      entry.mode === "document"
+        ? "mode-badge mode-badge--document"
+        : "mode-badge";
+
     article.innerHTML = `
       <div class="photo-thumb">
         <img alt="Foto ${index + 1}" src="${entry.url}" />
       </div>
       <div class="photo-details">
         <header>
-          <h3>Aufnahme ${index + 1}</h3>
+          <div class="card-title">
+            <h3>Aufnahme ${index + 1}</h3>
+            <span class="${modeBadgeClass}">${modeLabel}</span>
+          </div>
           <div class="card-actions">
             <button type="button" data-action="up" aria-label="nach oben" ${
               index === 0 ? "disabled" : ""
@@ -544,9 +615,12 @@ async function convertFileToPreset(
       `Dateityp ${file.type || "unbekannt"} wird nicht unterstützt.`
     );
   }
-  const config = QUALITY_PRESETS[presetKey];
+  const config = QUALITY_PRESETS[presetKey] ?? QUALITY_PRESETS[DEFAULT_PRESET];
   const { image, orientation, cleanup } = await loadImageWithOrientation(file);
   const canvas = renderImageToCanvas(image, orientation, config);
+  if (presetKey === "document") {
+    enhanceDocumentCanvas(canvas);
+  }
 
   const preserveMime =
     presetKey === DEFAULT_PRESET && ALLOWED_FILE_TYPES.includes(file.type);
@@ -561,15 +635,51 @@ async function convertFileToPreset(
 }
 
 async function buildPayloadFromSources(
-  sources: Array<{ file: File; description: string }>,
-  preset: PresetKey
+  sources: Array<{ file: File; description: string; mode: CaptureMode }>,
+  presetOverride?: PresetKey
 ) {
   const payload: PhotoEntryPayload[] = [];
   for (const source of sources) {
-    const processed = await convertFileToPreset(source.file, preset);
-    payload.push({ file: processed, description: source.description });
+    const processed = await convertFileToPreset(
+      source.file,
+      presetOverride ?? getPresetForMode(source.mode)
+    );
+    payload.push({
+      file: processed,
+      description: source.description,
+      mode: source.mode,
+    });
   }
   return payload;
+}
+
+function enhanceDocumentCanvas(canvas: HTMLCanvasElement) {
+  const ctx = canvas.getContext("2d");
+  if (!ctx) {
+    return;
+  }
+  const { width, height } = canvas;
+  const imageData = ctx.getImageData(0, 0, width, height);
+  const data = imageData.data;
+  const contrast = 1.2;
+  const brightness = 8;
+  for (let i = 0; i < data.length; i += 4) {
+    const r = data[i];
+    const g = data[i + 1];
+    const b = data[i + 2];
+    let value = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    value = (value - 128) * contrast + 128 + brightness;
+    if (value > 240) {
+      value = 255;
+    } else if (value < 24) {
+      value = 0;
+    }
+    value = Math.max(0, Math.min(255, value));
+    data[i] = value;
+    data[i + 1] = value;
+    data[i + 2] = value;
+  }
+  ctx.putImageData(imageData, 0, 0);
 }
 
 function loadImage(file: File): Promise<HTMLImageElement> {
@@ -743,7 +853,10 @@ async function loadImageWithOrientation(file: File): Promise<LoadedImage> {
           cleanup: () => bitmap.close?.(),
         };
       } catch (innerError) {
-        console.warn("ImageBitmap konnte nicht erstellt werden, fallback", innerError);
+        console.warn(
+          "ImageBitmap konnte nicht erstellt werden, fallback",
+          innerError
+        );
       }
     }
   }
@@ -754,10 +867,12 @@ async function loadImageWithOrientation(file: File): Promise<LoadedImage> {
 
 function getSourceDimensions(image: CanvasImageSource) {
   const maybeImg = image as HTMLImageElement;
-  const width =
-    (maybeImg.naturalWidth || (maybeImg as any).width || 0) as number;
-  const height =
-    (maybeImg.naturalHeight || (maybeImg as any).height || 0) as number;
+  const width = (maybeImg.naturalWidth ||
+    (maybeImg as any).width ||
+    0) as number;
+  const height = (maybeImg.naturalHeight ||
+    (maybeImg as any).height ||
+    0) as number;
   return { width, height };
 }
 

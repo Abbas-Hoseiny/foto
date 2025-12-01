@@ -41,5 +41,62 @@
   - Prüfen, dass `lastPdfBlob`/Share-Flow unverändert funktionieren.
   - Sample-PDF anhängen (falls benötigt) oder QA-Notiz in README ergänzen.
 - **Tests:**
+
   1. `npm run build && npm run preview` oder `npm run dev` und manuelle End-to-End-Probe.
   2. QA-Checkliste abhaken: PDF nur Bilder, keine Crashs, Share/Download Buttons aktiv.
+
+  # Erweiterung: Dokumentenmodus
+
+  ## Schritt 5 – Modus-Konzept & Datenmodell
+
+  - **Ziel:** Definiert, wie Foto- und Dokumentenmodus parallel existieren (globaler Toggle vs. pro Eintrag) und welche Daten an `generatePhotoPdf` übergeben werden müssen.
+  - **Vorgehen:**
+    - Audit von `entries[]` in `src/scripts/erfassung.ts` und `PhotoEntryPayload` in `src/lib/pdf.ts`, um zusätzliche Felder (z. B. `mode: "photo" | "document"`) vorzusehen.
+    - Entscheiden, ob der Modus während der Session global ist oder je Foto gespeichert wird; Ergebnis als Kommentar in `erfassung.ts` dokumentieren.
+    - Skizzieren, welche neuen UI-Controls benötigt werden (Button, Toggle, Dropdown) und wie sie mit Accessibility-Attributen versehen werden.
+  - **Tests:**
+    1. TypeScript-Typen kompilieren (`npm run build`) → sicherstellen, dass neue Felder überall berücksichtigt werden.
+    2. Manuelles Clickthrough im UI: Toggle ändern, neues Foto hinzufügen, prüfen, dass der gewählte Modus intern korrekt gesetzt wird (per `console.log`-Probe oder DevTools Breakpoint).
+
+  ## Schritt 6 – UI-Erweiterung & Persistenz
+
+  - **Ziel:** Fügt das Bedien-Element für den Dokumentenmodus hinzu und speichert die Auswahl (global oder pro Eintrag).
+  - **Vorgehen:**
+    - UI-Kontrolle in `src/pages/index.astro` oder direkt im gerenderten Listenteil ergänzen.
+    - Event-Handler in `erfassung.ts` einbinden, state aktualisieren, Rendering anpassen (z. B. Badge „Dokument“ auf Karten).
+    - Optional: `localStorage` nutzen, um den letzten Modus zu merken.
+  - **Tests:**
+    1. `npm run dev` starten → Moduswechsel mehrfach testen, sicherstellen, dass UI-Elemente korrekt fokusierbar sind.
+    2. Regressionstest: Fotos aufnehmen ohne Modusänderung → Verhalten unverändert.
+
+  ## Schritt 7 – Bildaufbereitung für Dokumente
+
+  - **Ziel:** Dokumentenmodus erhält eigene Qualitäts- und Canvas-Pipeline (z. B. Graustufen, autom. Zuschnitt, höhere Auflösung).
+  - **Vorgehen:**
+    - `convertFileToPreset` um ein neues Preset `document` erweitern (höhere `maxEdge`, ggf. `mimeType: "image/png"`).
+    - Canvas-Postprocessing implementieren (Kontrastverstärkung, Graustufen, optionale Perspektivkorrektur).
+    - Sicherstellen, dass `buildPayloadFromSources` und alle Aufrufer das neue Preset kennen.
+  - **Tests:**
+    1. Unit-ähnlicher Test: Dokumentfoto laden, Preset `document` erzwingen, Resultat visuell prüfen (speichern & öffnen).
+    2. Performance-Test: 5+ Dokumente importieren → PDF-Erstellung darf nicht signifikant länger dauern als vorher.
+
+  ## Schritt 8 – PDF-Layout für Dokumente
+
+  - **Ziel:** PDF-Seiten im Dokumentenmodus sollen eher wie Scans aussehen (leichter Rand, optionale Seitenzahl, Hintergrundfarbe).
+  - **Vorgehen:**
+    - `generatePhotoPdf` in `src/lib/pdf.ts` so erweitern, dass ein optionales Optionsobjekt (`{ mode: "photo" | "document" }`) entgegengenommen wird.
+    - Bei `mode === "document"` feste Margins (z. B. 18pt) und ggf. Seitenzahl/Text am Fußrand zeichnen; Foto weiterhin proportional skalieren.
+    - Shared Code extrahieren (z. B. `drawImageCentered(page, image, padding)`), um Duplication zu vermeiden.
+  - **Tests:**
+    1. Zwei Exporte generieren (Foto vs. Dokument) und sicherstellen, dass sich das Layout sichtbar unterscheidet.
+    2. `npm run build` + PDF manuell öffnen → keine Ausreißer bei Seitenrand oder Seitenzahlen.
+
+  ## Schritt 9 – End-to-End-QA & Dokumentation
+
+  - **Ziel:** Gesamtfunktion mit beiden Modi validieren und README/Doku aktualisieren.
+  - **Vorgehen:**
+    - QA-Checkliste erstellen (z. B. Tabelle Foto- vs. Dokumentmodus mit erwarteten Eigenschaften) und im Repo ablegen.
+    - README und ggf. `architecture.md` ergänzen (neue Modi beschreiben, Screenshots/Animated GIFs hinzufügen).
+  - **Tests:**
+    1. `npm run build && npm run preview` → Browserstack/Real Device: beide Modi testen, Share/Download prüfen.
+    2. Review der neuen Dokumentation gegen tatsächliches Verhalten (Peer-Review oder Self-Checkliste).
