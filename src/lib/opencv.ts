@@ -1,5 +1,5 @@
 const OPENCV_SRC =
-  "https://cdn.jsdelivr.net/npm/@techstark/opencv-js@4.10.0/dist/opencv.js";
+  "https://cdn.jsdelivr.net/npm/@techstark/opencv-js@4.12.0-release.1/dist/opencv.js";
 
 type CvModule = typeof import("@techstark/opencv-js");
 
