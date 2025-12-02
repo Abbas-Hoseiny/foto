@@ -113,9 +113,10 @@ export async function generatePhotoPdf(entries: PhotoEntryPayload[]) {
 
     const description = entry.description?.trim();
     if (description) {
-      drawDescriptionText(page, assets, description, {
-        x: imageX,
-        y: imageY - DESCRIPTION_GAP,
+      drawDescriptionWithOverflow(pdfDoc, page, assets, description, {
+        heading: `Foto ${index + 1}`,
+        startX: imageX,
+        startBaseline: imageY - DESCRIPTION_GAP,
         maxWidth: drawWidth,
       });
     }
@@ -254,7 +255,7 @@ function drawEntryLabel(
   });
 
   const fontSize = 14;
-  const textX = anchorX + iconWidth + 10;
+  const textX = anchorX + iconWidth + LABEL_TEXT_GAP;
   const textY = baseY + (LABEL_HEIGHT - fontSize) / 2;
   page.drawText(text, {
     x: textX,
@@ -265,53 +266,107 @@ function drawEntryLabel(
   });
 }
 
-function drawDescriptionText(
-  page: PDFPage,
+type DescriptionAreaConfig = {
+  heading: string;
+  startX: number;
+  startBaseline: number;
+  maxWidth: number;
+};
+
+function drawDescriptionWithOverflow(
+  pdfDoc: PDFDocument,
+  initialPage: PDFPage,
   assets: DocumentAssets,
   text: string,
-  area: { x: number; y: number; maxWidth: number }
+  config: DescriptionAreaConfig
 ) {
+  const words = text.split(/\s+/).filter(Boolean);
+  if (!words.length) {
+    return;
+  }
   const fontSize = DESCRIPTION_FONT_SIZE;
-  const lines = wrapTextIntoLines(assets.font, text, fontSize, area.maxWidth);
-  let cursorY = area.y;
-  for (const line of lines) {
+  const lineHeight = fontSize + DESCRIPTION_LINE_GAP;
+  let page = initialPage;
+  let x = config.startX;
+  let baseline = config.startBaseline;
+  let maxWidth = config.maxWidth;
+  let index = 0;
+  while (index < words.length) {
+    const { line, consumed } = buildLine(
+      words,
+      index,
+      assets.font,
+      fontSize,
+      maxWidth
+    );
+    if (!line) {
+      break;
+    }
+    if (baseline - fontSize < PAGE_PADDING) {
+      const next = createDescriptionContinuationPage(
+        pdfDoc,
+        assets,
+        config.heading
+      );
+      page = next.page;
+      x = next.startX;
+      baseline = next.startBaseline;
+      maxWidth = next.maxWidth;
+      continue;
+    }
     page.drawText(line, {
-      x: area.x,
-      y: cursorY,
+      x,
+      y: baseline - fontSize,
       size: fontSize,
       font: assets.font,
       color: DESCRIPTION_TEXT_COLOR,
     });
-    cursorY -= fontSize + DESCRIPTION_LINE_GAP;
-    if (cursorY < PAGE_PADDING) {
-      break;
-    }
+    baseline -= lineHeight;
+    index += consumed;
   }
 }
 
-function wrapTextIntoLines(
+function buildLine(
+  words: string[],
+  startIndex: number,
   font: PDFFont,
-  text: string,
   fontSize: number,
   maxWidth: number
 ) {
-  const words = text.split(/\s+/).filter(Boolean);
-  const lines: string[] = [];
-  let currentLine = "";
-  for (const word of words) {
-    const testLine = currentLine ? `${currentLine} ${word}` : word;
-    const lineWidth = font.widthOfTextAtSize(testLine, fontSize);
-    if (lineWidth <= maxWidth) {
-      currentLine = testLine;
+  let line = "";
+  let consumed = 0;
+  for (let i = startIndex; i < words.length; i += 1) {
+    const word = words[i];
+    const test = line ? `${line} ${word}` : word;
+    const width = font.widthOfTextAtSize(test, fontSize);
+    if (width <= maxWidth || consumed === 0) {
+      line = test;
+      consumed += 1;
     } else {
-      if (currentLine) {
-        lines.push(currentLine);
-      }
-      currentLine = word;
+      break;
     }
   }
-  if (currentLine) {
-    lines.push(currentLine);
-  }
-  return lines;
+  return { line, consumed };
+}
+
+function createDescriptionContinuationPage(
+  pdfDoc: PDFDocument,
+  assets: DocumentAssets,
+  heading: string
+) {
+  const page = pdfDoc.addPage([A4_WIDTH, A4_HEIGHT]);
+  drawHeaderBar(page, assets);
+  const labelBaseY =
+    page.getSize().height - HEADER_HEIGHT - HEADER_MARGIN_BOTTOM - LABEL_HEIGHT;
+  drawEntryLabel(
+    page,
+    assets,
+    `${heading} – Notizen`,
+    PAGE_PADDING,
+    labelBaseY
+  );
+  const startBaseline = labelBaseY - DESCRIPTION_GAP;
+  const startX = PAGE_PADDING;
+  const maxWidth = page.getSize().width - PAGE_PADDING * 2;
+  return { page, startBaseline, startX, maxWidth };
 }
