@@ -783,7 +783,9 @@ async function loadImageWithOrientation(file: File): Promise<LoadedImage> {
   }
 
   const img = await loadImage(file);
-  return { image: img, orientation };
+  // Browsers typically apply EXIF orientation automatically for <img>,
+  // so we reset to 1 to avoid rotating twice in the canvas pipeline.
+  return { image: img, orientation: 1 };
 }
 
 function getSourceDimensions(image: CanvasImageSource) {
