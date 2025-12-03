@@ -4,8 +4,8 @@ import { fileURLToPath } from "node:url";
 
 // https://astro.build/config
 export default defineConfig({
-  site: "https://abbas-hoseiny.github.io/foto/",
-  base: "/foto/",
+  site: "https://abbas-hoseiny.github.io/pestalozzi-pdf/",
+  base: "/pestalozzi-pdf/",
   vite: {
     resolve: {
       alias: {
