@@ -16,7 +16,7 @@ const rawBase = import.meta.env.BASE_URL ?? '/';
 const basePath = rawBase.endsWith('/') ? rawBase : `${rawBase}/`;
 const siteOrigin = Astro.site?.origin ?? '';
 const canonicalUrl = Astro.site?.toString() ?? (siteOrigin || basePath);
-const previewPath = `${basePath}branding/preview.png`;
+const previewPath = `${basePath}branding/preview.jpg`;
 const previewUrl = siteOrigin
   ? `${siteOrigin}${previewPath}`
   : new URL(previewPath, Astro.request.url).toString();
