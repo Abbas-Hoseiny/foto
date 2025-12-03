@@ -19,7 +19,9 @@
   --bg-overlay-bottom: rgba(6, 10, 14, 0.94);
   --bg-highlight: rgba(38, 118, 71, 0.28);
   --bg-shadow: rgba(0, 0, 0, 0.42);
-  --bg-photo: url("../assets/branding/background.png");
+  --bg-primary-top: #070a11;
+  --bg-primary-bottom: #111621;
+  --bg-radial: rgba(38, 118, 71, 0.18);
   --font-family-base: "Helvetica Neue", "Inter", "Segoe UI", system-ui,
     -apple-system, sans-serif;
 }
@@ -40,30 +42,14 @@ body {
 }
 
 body {
-  background: linear-gradient(
-      180deg,
-      var(--bg-overlay-top) 0%,
-      rgba(9, 13, 20, 0.85) 50%,
-      var(--bg-overlay-bottom) 100%
-    ),
-    var(--bg-photo) center / cover fixed;
-  background-attachment: fixed, fixed;
-  background-repeat: no-repeat;
-  background-blend-mode: multiply, normal;
-  position: relative;
-}
-
-body::before {
-  content: "";
-  background: linear-gradient(135deg, var(--bg-highlight), transparent 55%),
-    radial-gradient(
-      circle at 80% 10%,
-      rgba(255, 255, 255, 0.18),
+  background: radial-gradient(
+      circle at top,
+      var(--bg-radial),
       transparent 55%
     ),
-    linear-gradient(180deg, transparent 40%, var(--bg-shadow));
-  mix-blend-mode: soft-light;
-  opacity: 0.85;
+    linear-gradient(180deg, var(--bg-primary-top), var(--bg-primary-bottom));
+  background-attachment: fixed;
+  background-repeat: no-repeat;
 }
 
 img {
