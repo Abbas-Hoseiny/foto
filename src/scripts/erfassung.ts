@@ -161,19 +161,30 @@ function ready() {
       return;
     }
     setStatus(status, "Share Sheet wird geöffnet ...");
-    const shareResult = await tryShare(lastPdfFile);
-    if (shareResult === "shared") {
-      setStatus(status, "PDF geteilt.");
-    } else if (shareResult === "aborted") {
-      setStatus(status, "Teilen abgebrochen.");
-    } else if (shareResult === "unsupported") {
-      setStatus(
-        status,
-        "Teilen wird auf diesem Gerät nicht unterstützt.",
-        "error"
-      );
-    } else {
-      setStatus(status, "Teilen nicht möglich – bitte PDF speichern.", "error");
+    shareButton.dataset.loading = "true";
+    shareButton.disabled = true;
+    try {
+      const shareResult = await tryShare(lastPdfFile);
+      if (shareResult === "shared") {
+        setStatus(status, "PDF geteilt.");
+      } else if (shareResult === "aborted") {
+        setStatus(status, "Teilen abgebrochen.");
+      } else if (shareResult === "unsupported") {
+        setStatus(
+          status,
+          "Teilen wird auf diesem Gerät nicht unterstützt.",
+          "error"
+        );
+      } else {
+        setStatus(
+          status,
+          "Teilen nicht möglich – bitte PDF speichern.",
+          "error"
+        );
+      }
+    } finally {
+      shareButton.dataset.loading = "false";
+      updateExportButtons(shareButton, downloadButton);
     }
   });
 
@@ -517,11 +528,25 @@ async function convertFileToPreset(
     );
   }
   const config = QUALITY_PRESETS[presetKey] ?? QUALITY_PRESETS[DEFAULT_PRESET];
-  const { image, orientation, cleanup } = await loadImageWithOrientation(file);
-  const canvas = renderImageToCanvas(image, orientation, config);
-
   const preserveMime =
     presetKey === DEFAULT_PRESET && ALLOWED_FILE_TYPES.includes(file.type);
+
+  const { image, orientation, cleanup } = await loadImageWithOrientation(file);
+  const { width: sourceWidth, height: sourceHeight } =
+    getSourceDimensions(image);
+  const largestEdge = Math.max(sourceWidth, sourceHeight);
+  const targetEdge = config.maxEdge ?? largestEdge;
+  const needsResize = targetEdge < largestEdge;
+  const finalOrientation = orientation || 1;
+  const needsOrientationFix = finalOrientation !== 1;
+  const needsReencode = presetKey !== DEFAULT_PRESET || !preserveMime;
+
+  if (!needsResize && !needsOrientationFix && !needsReencode) {
+    cleanup?.();
+    return { file };
+  }
+
+  const canvas = renderImageToCanvas(image, orientation, config);
   const targetMime = preserveMime ? file.type : config.mimeType;
   const qualityValue = /jpe?g/i.test(targetMime) ? config.quality : undefined;
   const blob = await canvasToBlob(canvas, targetMime, qualityValue);
